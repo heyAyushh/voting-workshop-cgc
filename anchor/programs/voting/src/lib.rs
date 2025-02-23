@@ -34,9 +34,20 @@ pub mod voting {
     }
 
     pub fn vote(ctx: Context<Vote>, _candidate_name: String, _poll_id: u64) -> Result<()> {
+        
+        //checking if voted or not
+        if ctx.accounts.voter_record.voted {
+          return Err(error!(VotingError::AlreadyVoted));
+        }
+        
         let candidate = &mut ctx.accounts.candidate;
         candidate.candidate_votes += 1;
 
+        //adding a vote record for signer
+        let voter_record = &mut ctx.accounts.voter_record;
+        voter_record.voted = true;
+        voter_record.poll = ctx.accounts.poll.key();
+        
         msg!("Voted for candidate: {}", candidate.candidate_name);
         msg!("Votes: {}", candidate.candidate_votes);
         Ok(())
@@ -62,6 +73,15 @@ pub struct Vote<'info> {
       bump
     )]
     pub candidate: Account<'info, Candidate>,
+
+    #[account(
+      init_if_needed,
+      payer = signer,
+      space = 8 + VoterRecord::INIT_SPACE,
+      seeds = [signer.key().as_ref(), poll_id.to_le_bytes().as_ref()],
+      bump
+    )]
+    pub voter_record: Account<'info, VoterRecord>,
 
     pub system_program: Program<'info, System>,
 }
@@ -125,3 +145,17 @@ pub struct Poll {
     pub poll_end: u64,
     pub candidate_amount: u64,
 }
+
+#[account]
+#[derive(InitSpace)]
+pub struct VoterRecord {
+    pub voted: bool,
+    pub poll: Pubkey,
+}
+
+#[error_code]
+pub enum VotingError {
+    #[msg("This address has already voted for this poll")]
+    AlreadyVoted,
+}
+
